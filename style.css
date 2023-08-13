@@ -1,14 +1,54 @@
 :root {
     --main: #ec3750;
+    --secondary: #8492a6;
+    --tertiary: #33d6a6;
 }
 
 html {
     background-color: black;
+    color: white;
 }
 
 canvas {
-    display: block;
-    margin: 0 auto;
+    position: fixed;
     border: 5px solid var(--main);
     border-radius: 10px;
+}
+
+textarea {
+    background-color: black;
+    color: white;
+    border: 5px solid var(--main);
+    border-radius: 10px;
+    resize: none;
+    position: relative;
+}
+
+.cm-s-theme-dark.CodeMirror {
+    background-color: black;
+    color: var(--main);
+    font: bold 16px monospace;
+    border: 3px solid var(--main);
+    border-radius: 10px;
+    top: 340px;
+    left: 186px;
+    width: 400px;
+}
+
+.cm-s-theme-dark div.CodeMirror-selected {
+    background: var(--secondary);
+}
+
+
+.cm-s-theme-dark .CodeMirror-cursor {
+    border-left: 2px solid var(--main);
+}
+
+.cm-s-theme-dark .CodeMirror-linenumber {
+    color: var(--primary);
+}
+
+.cm-s-theme-dark .CodeMirror-gutters {
+    background: black;
+    border-right: 3px solid var(--main);
 }
