@@ -1,0 +1,14 @@
+:root {
+    --main: #ec3750;
+}
+
+html {
+    background-color: black;
+}
+
+canvas {
+    display: block;
+    margin: 0 auto;
+    border: 5px solid var(--main);
+    border-radius: 10px;
+}
