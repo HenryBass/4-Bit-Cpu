@@ -24,6 +24,10 @@ BV: Set PC to V
 CV: Set SP to V
 */
 
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
 const editor = CodeMirror.fromTextArea(document.getElementById("code"), {
     theme: "theme-dark",
     lineNumbers: true,
@@ -32,18 +36,28 @@ const editor = CodeMirror.fromTextArea(document.getElementById("code"), {
     indentWithTabs: true,
     lineWrapping: true,
     autofocus: true,
+    firstLineNumber: 0,
     lineNumberFormatter: (line) => {
-        return "0x" + line.toString(16);
+        let l = line.toString(16);
+        return "0x" + (l.length == 1 ? "0" : "") + l;
     },
     extraKeys: {
         "Ctrl-Enter": () => {
-            alert(editor.getValue().split("\n"));
             computer.reset();
-            computer.load(editor.getValue().split("\n"));
-            computer.run(256);
-            }},
-    lineSeparator: "\n",
+            computer.load(editor.getDoc().getValue());
+            computer.run();
+        },
+        "Ctrl-S": () => {
+            localStorage.setItem("code", editor.getDoc().getValue())
+        }
+    }
 });
+
+if (localStorage.getItem("code")) {
+    editor.getDoc().setValue(localStorage.getItem("code"))
+} else {
+    editor.getDoc().setValue(`0xD\n0x1\n0x0\n0x1\n0xB\n0x0`)
+}
 
 const style = {
     primary: "#ec3750",
@@ -55,9 +69,26 @@ const style = {
     borderRadius: 12,
 }
 
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-console.log(editor);
+let viewState = {
+    memScroll: 0,
+    mouseX: 0,
+    mouseY: 0,
+}
+
+canvas.addEventListener('wheel', function(e) {
+    if (viewState.mouseX < style.pixelSize * 8.3 && viewState.mouseX > 0) {
+        viewState.memScroll -= e.deltaY
+        viewState.memScroll = Math.max(Math.min(viewState.memScroll, 0), -style.pixelSize * (256 - 32))
+        computer.canvasDump()
+    }
+})
+
+canvas.addEventListener('mousemove', function(e) {
+    const rect = canvas.getBoundingClientRect()
+    viewState.mouseX = e.clientX - rect.left
+    viewState.mouseY = e.clientY - rect.top
+    computer.canvasDump()
+})
 
 class Button {
     constructor(x, y, w, h, text, callback, color) {
@@ -83,7 +114,11 @@ class Button {
 }
 
 const buttons = [
-    new Button(300, 10, 80, 30, "RUN", () => {computer.load(editor.getValue().split("\n")); computer.run()}, style.primary),
+    new Button(300, 10, 80, 30, "RUN", () => {
+        computer.reset();
+        computer.load(editor.getDoc().getValue());
+        computer.run();
+    }, style.primary),
     new Button(400, 10, 80, 30, "CLK++", () => {if (1/(computer.clockSpeed/1000) < 128) computer.clockSpeed /= 2}, style.primary),
     new Button(500, 10, 80, 30, "CLK--", () => {if (1/(computer.clockSpeed/1000) > 0.5) computer.clockSpeed *= 2}, style.primary)
 ]
@@ -101,7 +136,7 @@ canvas.addEventListener('click', function(e) {
 
 class Computer {
     constructor() {
-        this.memory = new Array(32).fill(0x0);
+        this.memory = new Array(256).fill(0x0);
         this.PC = 0xf;
         this.A = 0x0;
         this.B = 0x0;
@@ -113,22 +148,24 @@ class Computer {
         // Carry, Negative, Equal, Error
     }
     reset() {
-        this.memory = new Array(32).fill(0x0);
+        this.memory = new Array(256).fill(0x0);
         this.PC = 0xf;
         this.A = 0x0;
         this.B = 0x0;
         this.C = 0x0;
         this.SP = 0x0;
         this.F = [0x0, 0x0, 0x0, 0x0];
-        this.clockSpeed = 500;
         this.haltRequest = true;
     }
     fetch() {
         return [this.memory[this.PC++], this.memory[this.PC++]];
     }
     load(program) {
+        program = program.split("\n");
         for (let i = 0; i < program.length; i++) {
-            this.memory[i + 0xf] = program[i];
+            let hex = eval(program[i].toLowerCase());
+            console.log(hex)
+            this.memory[i + 0xf] = hex;
         }
     }
     memoryDump() {
@@ -174,7 +211,7 @@ class Computer {
                         ctx.fillStyle = style.primary
                     }
                     ctx.beginPath()
-                    ctx.roundRect(style.xOffset + j*style.pixelSize, style.yOffset + i*style.pixelSize, style.pixelSize, style.pixelSize, style.borderRadius)
+                    ctx.roundRect(style.xOffset + j*style.pixelSize, viewState.memScroll + style.yOffset + i*style.pixelSize, style.pixelSize, style.pixelSize, style.borderRadius)
                     ctx.fill()
                 }
             }
@@ -182,28 +219,33 @@ class Computer {
             let stringified = i.toString(16)
             stringified = stringified.length == 1 ? "0" + stringified : stringified
             ctx.beginPath()
-            ctx.fillText(stringified, 5, style.yOffset + i*style.pixelSize + style.pixelSize/2 + 6)
+            ctx.fillText(stringified, 5, viewState.memScroll + style.yOffset + i*style.pixelSize + style.pixelSize/2 + 6)
             ctx.fill()
         }
+
+        let PCPos = viewState.memScroll + style.yOffset + style.pixelSize * this.PC + style.pixelSize - 4
+        let SPPos = viewState.memScroll + style.yOffset + style.pixelSize * this.SP + style.pixelSize - 4
+
+
         ctx.lineWidth = 2
         ctx.fillStyle = style.secondary
         ctx.beginPath()
-        ctx.fillText("*PC", style.xOffset + style.pixelSize * 4.2, style.yOffset + style.pixelSize * this.PC + style.pixelSize - 4)
+        ctx.fillText("*PC", style.xOffset + style.pixelSize * 4.2, PCPos)
         ctx.fill()
 
         ctx.strokeStyle = style.secondary
         ctx.beginPath()
-        ctx.roundRect(style.xOffset, style.yOffset + style.pixelSize * this.PC, style.pixelSize * 4, style.pixelSize * 2, style.borderRadius)
+        ctx.roundRect(style.xOffset, viewState.memScroll + style.yOffset + style.pixelSize * this.PC, style.pixelSize * 4, style.pixelSize * 2, style.borderRadius)
         ctx.stroke()
 
         ctx.fillStyle = style.tertiary
         ctx.beginPath()
-        ctx.fillText("*SP", (this.SP == this.PC ? 30 : 0) + style.xOffset + style.pixelSize * 4.2, style.yOffset + style.pixelSize * this.SP + style.pixelSize - 4)
+        ctx.fillText("*SP", (this.SP == this.PC ? 30 : 0) + style.xOffset + style.pixelSize * 4.2, SPPos)
         ctx.fill()
 
         ctx.strokeStyle = style.tertiary
         ctx.beginPath()
-        ctx.roundRect(style.xOffset, style.yOffset + style.pixelSize * this.SP, style.pixelSize * 4, style.pixelSize, style.borderRadius)
+        ctx.roundRect(style.xOffset, viewState.memScroll + style.yOffset + style.pixelSize * this.SP, style.pixelSize * 4, style.pixelSize, style.borderRadius)
         ctx.stroke()
 
         ctx.strokeStyle = style.primary
@@ -227,7 +269,44 @@ class Computer {
         ctx.fillStyle = style.primary
         ctx.beginPath()
         let Hz = Math.round(100/(computer.clockSpeed / 1000))/100
-        ctx.fillText("CLK: " + Hz + "Hz" + (Hz >= 128 ? " MAX" : (Hz <= 0.5 ? " MIN" : "")), 440, 70)
+        ctx.fillText("CLK: " + Hz + "Hz" + (Hz >= 128 ? " MAX" : (Hz <= 0.5 ? " MIN" : "")), 400, 70)
+
+        let PCPointerXOff = 4.2
+        if (PCPos < (0 - style.pixelSize*2)) {
+            ctx.strokeStyle = style.secondary
+            ctx.beginPath()
+            ctx.moveTo(style.xOffset + style.pixelSize * PCPointerXOff, 0)
+            ctx.lineTo(style.xOffset + style.pixelSize * PCPointerXOff + 10, 15)
+            ctx.lineTo(style.xOffset + style.pixelSize * PCPointerXOff - 10, 15)
+            ctx.lineTo(style.xOffset + style.pixelSize * PCPointerXOff, 0)
+            ctx.stroke()
+        } else if (PCPos > canvas.height) {
+            ctx.strokeStyle = style.secondary
+            ctx.beginPath()
+            ctx.moveTo(style.xOffset + style.pixelSize * PCPointerXOff, canvas.height)
+            ctx.lineTo(style.xOffset + style.pixelSize * PCPointerXOff + 10, canvas.height - 15)
+            ctx.lineTo(style.xOffset + style.pixelSize * PCPointerXOff - 10, canvas.height - 15)
+            ctx.lineTo(style.xOffset + style.pixelSize * PCPointerXOff, canvas.height)
+            ctx.stroke()
+        }
+        let SPPointerXOff = 1.5
+        if (SPPos < (0 - style.pixelSize*2)) {
+            ctx.strokeStyle = style.tertiary
+            ctx.beginPath()
+            ctx.moveTo(style.xOffset + style.pixelSize * SPPointerXOff, 0)
+            ctx.lineTo(style.xOffset + style.pixelSize * SPPointerXOff + 10, 15)
+            ctx.lineTo(style.xOffset + style.pixelSize * SPPointerXOff - 10, 15)
+            ctx.lineTo(style.xOffset + style.pixelSize * SPPointerXOff, 0)
+            ctx.stroke()
+        } else if (SPPos > canvas.height) {
+            ctx.strokeStyle = style.tertiary
+            ctx.beginPath()
+            ctx.moveTo(style.xOffset + style.pixelSize * SPPointerXOff, canvas.height)
+            ctx.lineTo(style.xOffset + style.pixelSize * SPPointerXOff + 10, canvas.height - 15)
+            ctx.lineTo(style.xOffset + style.pixelSize * SPPointerXOff - 10, canvas.height - 15)
+            ctx.lineTo(style.xOffset + style.pixelSize * SPPointerXOff, canvas.height)
+            ctx.stroke()
+        }
     }
 
     renderRegister(value, name, x, y, col, height=0) {
@@ -244,7 +323,7 @@ class Computer {
             let bit = bits[j]
             if (bit == '1') {
                 ctx.beginPath()
-                ctx.roundRect(x + (j%4)*style.pixelSize, style.yOffset + y + height, style.pixelSize, style.pixelSize, style.borderRadius)
+                ctx.roundRect(x + (j%4)*style.pixelSize, style.yOffset + y + height + Math.floor(j/4)*style.pixelSize, style.pixelSize, style.pixelSize, style.borderRadius)
                 ctx.fill()
             }
         }
@@ -266,7 +345,7 @@ class Computer {
         }
     }
 
-    run(cycles) {
+    run() {
         setTimeout(() => {
             this.step();
             if (!this.haltRequest) {
@@ -277,8 +356,10 @@ class Computer {
         }, this.clockSpeed);
     }
     step() {
+        this.PC %= 0xff
+        this.canvasDump()
         const [opcode, operand] = this.fetch();
-        //console.log("Opcode:", opcode, "Operand:", operand)
+        console.log("Opcode:", opcode, "Operand:", operand)
         switch (opcode) {
             case 0x0:
                 switch (operand) {
@@ -327,9 +408,18 @@ class Computer {
                     case 0x9:
                         if (this.F[2] == 1) this.PC += 0x2
                     break;
+                    case 0xA:
+                        this.A += this.B
+                        this.F[0] = this.A > 0xf
+                        this.A %= 0xf
+                    break;
+                    case 0xB:
+                        this.A += this.C
+                        this.F[0] = this.A > 0xf
+                        this.A %= 0xf
 
                     default:
-                        console.log("Invalid operand")
+                        console.log("Invalid operand: ", operand)
                         break;
                 }
                 break
@@ -388,10 +478,9 @@ class Computer {
             case 0xF:
                 this.f[2] = this.A == operand
             default:
-                console.log("Invalid opcode")
+                console.log("Invalid opcode:", opcode)
                 break;
         }
-        this.canvasDump()
         //this.emojiDump()
        // console.log(this.A, this.PC, this.SP)
 
@@ -399,10 +488,10 @@ class Computer {
 }
 
 const computer = new Computer();
-computer.load([
+computer.canvasDump();
+/*computer.load([
     0xD, 0x1, // Add 1 to A
     0x0, 0x1, // Push A to stack
     0xB, 0x0, // Set PC to 0x1f
-]);
-computer.emojiDump();
+]);*/
 computer.run();
